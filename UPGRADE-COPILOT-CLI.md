@@ -1,6 +1,6 @@
 # Copilot CLI Upgrade Smoke Test
 
-After every Copilot CLI upgrade, run these checks to verify `auto-memory` still works with the new schema.
+After every Copilot CLI upgrade, run these checks to verify `session-recall` still works with the new schema.
 
 ## When to run
 
@@ -36,7 +36,7 @@ copilot --version
 ### 5. Schema check (MUST exit 0)
 
 ```bash
-cd auto-memory && auto-memory schema-check
+cd auto-memory && session-recall schema-check
 ```
 
 If this fails with exit code 2:
@@ -48,13 +48,13 @@ If this fails with exit code 2:
 ### 6. Smoke test — list
 
 ```bash
-auto-memory list --json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'{d[\"count\"]} sessions')"
+session-recall list --json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'{d[\"count\"]} sessions')"
 ```
 
 ### 7. Smoke test — health
 
 ```bash
-auto-memory health --json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'overall: {d[\"overall_score\"]}')"
+session-recall health --json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'overall: {d[\"overall_score\"]}')"
 ```
 
 ### 8. Log result
@@ -72,4 +72,4 @@ Append to `~/.copilot/upgrade-log.md`:
 
 1. Pin previous version: `npm i -g @github/copilot@<old-version>`
 2. Open an issue or update `EXPECTED_SCHEMA` in `schema_check.py`
-3. Do NOT use the new Copilot CLI with a broken `auto-memory`
+3. Do NOT use the new Copilot CLI with a broken `session-recall`
