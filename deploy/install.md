@@ -52,11 +52,11 @@ python3 -m pip install --user --force-reinstall -e .
 Run both commands. Both must succeed.
 
 ```bash
-which auto-memory
-auto-memory schema-check
+which session-recall
+session-recall schema-check
 ```
 
-If `which auto-memory` returns nothing, see Troubleshooting below.
+If `which session-recall` returns nothing, see Troubleshooting below.
 
 ## Agent Integration — Add to Copilot Instructions
 
@@ -80,25 +80,25 @@ Append this exact block to the end of `~/.copilot/copilot-instructions.md`:
 ```markdown
 ## Progressive Session Recall — RUN FIRST ON EVERY PROMPT
 
-**Run `auto-memory` FIRST on every prompt before doing anything else.** It costs ~50 tokens and prevents expensive blind searches.
+**Run `session-recall` FIRST on every prompt before doing anything else.** It costs ~50 tokens and prevents expensive blind searches.
 
 ```bash
-auto-memory files --json --limit 10  # recently touched files
-auto-memory files --days 7 --json    # files touched in last 7 days
-auto-memory list --json --limit 5    # recent sessions
-auto-memory list --days 2 --json     # sessions from last 2 days
-auto-memory search '<term>' --json   # full-text search
-auto-memory search '<term>' --days 5 # search last 5 days only
-auto-memory checkpoints --days 3     # checkpoints from last 3 days
-auto-memory show <id> --json         # drill into one session
-auto-memory health --json            # 8-dimension health check
-auto-memory schema-check             # validate DB schema (run after Copilot CLI upgrade)
+session-recall files --json --limit 10  # recently touched files
+session-recall files --days 7 --json    # files touched in last 7 days
+session-recall list --json --limit 5    # recent sessions
+session-recall list --days 2 --json     # sessions from last 2 days
+session-recall search '<term>' --json   # full-text search
+session-recall search '<term>' --days 5 # search last 5 days only
+session-recall checkpoints --days 3     # checkpoints from last 3 days
+session-recall show <id> --json         # drill into one session
+session-recall health --json            # 8-dimension health check
+session-recall schema-check             # validate DB schema (run after Copilot CLI upgrade)
 ```
 
 **`--days N` works on all 4 query commands** (`list`, `files`, `checkpoints`, `search`) — filters to sessions/files/checkpoints from the last N days.
 
-Only use filesystem tools (grep, glob, find) if auto-memory returns nothing useful.
-If `auto-memory` errors, continue silently — it's a convenience, not a blocker.
+Only use filesystem tools (grep, glob, find) if session-recall returns nothing useful.
+If `session-recall` errors, continue silently — it's a convenience, not a blocker.
 ```
 
 ## Verify Installation
@@ -106,16 +106,16 @@ If `auto-memory` errors, continue silently — it's a convenience, not a blocker
 Run all three checks. All must pass.
 
 ```bash
-auto-memory health          # all dimensions should show GREEN
-auto-memory list --json     # should return at least one session
-auto-memory schema-check    # must exit 0
+session-recall health          # all dimensions should show GREEN
+session-recall list --json     # should return at least one session
+session-recall schema-check    # must exit 0
 ```
 
-If `auto-memory list --json` returns zero sessions, that is normal on a fresh install — Copilot CLI needs at least one completed session first.
+If `session-recall list --json` returns zero sessions, that is normal on a fresh install — Copilot CLI needs at least one completed session first.
 
 ## Troubleshooting
 
-### `command not found: auto-memory`
+### `command not found: session-recall`
 
 PATH issue. Check that `~/.local/bin` is on PATH:
 
@@ -127,25 +127,25 @@ If missing, add it and retry:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
-which auto-memory
+which session-recall
 ```
 
 If still not found, re-run install with `uv tool install --force --editable .` from the repo root.
 
 ### `schema-check` fails (exit code 2)
 
-The Copilot CLI DB schema has drifted from what auto-memory expects. This usually happens after a Copilot CLI upgrade. See [UPGRADE-COPILOT-CLI.md](../UPGRADE-COPILOT-CLI.md) for the full procedure.
+The Copilot CLI DB schema has drifted from what session-recall expects. This usually happens after a Copilot CLI upgrade. See [UPGRADE-COPILOT-CLI.md](../UPGRADE-COPILOT-CLI.md) for the full procedure.
 
 ### No sessions found
 
-Normal on first use. Copilot CLI needs at least one completed session before auto-memory has anything to query. Run a Copilot CLI session, then retry.
+Normal on first use. Copilot CLI needs at least one completed session before session-recall has anything to query. Run a Copilot CLI session, then retry.
 
 ## Upgrading Copilot CLI
 
 After any Copilot CLI upgrade, run:
 
 ```bash
-auto-memory schema-check
+session-recall schema-check
 ```
 
 If it exits 0, no action needed. If it fails, follow the full upgrade procedure in [UPGRADE-COPILOT-CLI.md](../UPGRADE-COPILOT-CLI.md).

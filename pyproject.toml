@@ -12,7 +12,7 @@ authors = [{name = "auto-memory contributors"}]
 dependencies = []
 
 [project.scripts]
-auto-memory = "session_recall.__main__:main"
+session-recall = "session_recall.__main__:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]

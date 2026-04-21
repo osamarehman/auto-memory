@@ -8,22 +8,22 @@ This file contains the raw instruction block for manual reference. Copy the bloc
 
 ## Progressive Session Recall — RUN FIRST ON EVERY PROMPT
 
-**Run `auto-memory` FIRST on every prompt before doing anything else.** It costs ~50 tokens and prevents expensive blind searches.
+**Run `session-recall` FIRST on every prompt before doing anything else.** It costs ~50 tokens and prevents expensive blind searches.
 
 ```bash
-auto-memory files --json --limit 10  # recently touched files
-auto-memory files --days 7 --json    # files touched in last 7 days
-auto-memory list --json --limit 5    # recent sessions
-auto-memory list --days 2 --json     # sessions from last 2 days
-auto-memory search '<term>' --json   # full-text search
-auto-memory search '<term>' --days 5 # search last 5 days only
-auto-memory checkpoints --days 3     # checkpoints from last 3 days
-auto-memory show <id> --json         # drill into one session
-auto-memory health --json            # 8-dimension health check
-auto-memory schema-check             # validate DB schema (run after Copilot CLI upgrade)
+session-recall files --json --limit 10  # recently touched files
+session-recall files --days 7 --json    # files touched in last 7 days
+session-recall list --json --limit 5    # recent sessions
+session-recall list --days 2 --json     # sessions from last 2 days
+session-recall search '<term>' --json   # full-text search
+session-recall search '<term>' --days 5 # search last 5 days only
+session-recall checkpoints --days 3     # checkpoints from last 3 days
+session-recall show <id> --json         # drill into one session
+session-recall health --json            # 8-dimension health check
+session-recall schema-check             # validate DB schema (run after Copilot CLI upgrade)
 ```
 
 **`--days N` works on all 4 query commands** (`list`, `files`, `checkpoints`, `search`) — filters to sessions/files/checkpoints from the last N days.
 
-Only use filesystem tools (grep, glob, find) if auto-memory returns nothing useful.
-If `auto-memory` errors, continue silently — it's a convenience, not a blocker.
+Only use filesystem tools (grep, glob, find) if session-recall returns nothing useful.
+If `session-recall` errors, continue silently — it's a convenience, not a blocker.

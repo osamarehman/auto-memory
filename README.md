@@ -6,7 +6,7 @@ Progressive session disclosure CLI for GitHub Copilot CLI. Queries your local `~
 
 ## Why
 
-Copilot CLI stores session history locally but has no built-in way to query it. `auto-memory` gives you (and the agent) structured access to past sessions, files, and checkpoints — enabling progressive context recall without MCP servers or hooks.
+Copilot CLI stores session history locally but has no built-in way to query it. `session-recall` gives you (and the agent) structured access to past sessions, files, and checkpoints — enabling progressive context recall without MCP servers or hooks.
 
 ## Install
 
@@ -26,25 +26,25 @@ See [`deploy/install.md`](deploy/install.md) for full instructions, agent integr
 
 ```bash
 # List recent sessions for current repo
-auto-memory list --json
+session-recall list --json
 
 # Show details for a session (prefix match)
-auto-memory show f662 --json
+session-recall show f662 --json
 
 # Full-text search across turns
-auto-memory search "SQLITE_BUSY" --json
+session-recall search "SQLITE_BUSY" --json
 
 # Recently touched files
-auto-memory files --json
+session-recall files --json
 
 # Recent checkpoints
-auto-memory checkpoints --json
+session-recall checkpoints --json
 
 # 8-dimension health check
-auto-memory health
+session-recall health
 
 # Validate DB schema (run after Copilot CLI upgrades)
-auto-memory schema-check
+session-recall schema-check
 ```
 
 ## Health Check
