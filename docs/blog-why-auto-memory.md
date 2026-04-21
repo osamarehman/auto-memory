@@ -24,7 +24,7 @@ But here's the part nobody talks about: **you don't actually have 110K usable to
 
 ### Context Rot
 
-LLMs don't degrade gracefully. They hit a wall. Research and real-world usage both show the same pattern — once you cross roughly **50% of the context window**, the model starts losing coherence. It forgets things mentioned 30 turns ago. It contradicts its own earlier responses. It hallucinates file names it confidently stated five minutes earlier. It starts "drifting."
+LLMs don't degrade gracefully. They hit a wall. Research and real-world usage both show the same pattern — once you cross roughly **60% of the context window**, the model starts losing coherence. It forgets things mentioned 30 turns ago. It contradicts its own earlier responses. It hallucinates file names it confidently stated five minutes earlier. It starts "drifting."
 
 The industry calls this the "lost in the middle" problem. The model pays attention to the beginning (your instructions) and the end (recent turns), but everything in the middle — your actual working context — gets progressively fuzzier.
 
@@ -32,14 +32,14 @@ So the real math looks more like this:
 
 ```
 200,000  tokens — context window (theoretical max)
-100,000  tokens — effective limit before context rot kicks in
+120,000  tokens — effective limit before context rot kicks in (~60%)
  -65,000  tokens — MCP tools
  -25,000  tokens — instruction files
 =========
- ~10,000  tokens — what you ACTUALLY have before quality degrades
+ ~30,000  tokens — what you ACTUALLY have before quality degrades
 ```
 
-**Ten thousand tokens.** That's maybe 15-20 turns of conversation before the model starts losing the plot. That's why you're hitting `/compact` every 45 minutes — not because you've filled 200K tokens, but because the model is already rotting at 100K.
+**Thirty thousand tokens.** That's maybe 30-40 turns of conversation before the model starts losing the plot. That's why you're hitting `/compact` every 45 minutes — not because you've filled 200K tokens, but because the model is already rotting at 120K.
 
 Now start working. Every file read, every grep result, every agent response eats into that remaining 110K. After 20-30 turns of conversation, you're staring at the dreaded compaction warning. You run `/compact`. And then:
 
