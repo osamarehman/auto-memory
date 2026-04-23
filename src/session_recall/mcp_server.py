@@ -3,7 +3,7 @@ from __future__ import annotations
 
 _IMPORT_ERROR_MSG = (
     "MCP support requires the 'mcp' package.\n"
-    "Install with: pip install \"auto-memory[mcp]\""
+    "Install with: pip install \"claude-auto-mem[mcp]\""
 )
 
 try:

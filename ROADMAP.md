@@ -2,7 +2,7 @@
 
 Planned work for auto-memory. Contributions welcome.
 
-Current version: **0.1.0**
+Current version: **1.0.0**
 
 ---
 
@@ -106,10 +106,10 @@ Optional sync of the Claude Code index to a remote store (S3, GitHub Gist, HTTPS
 - [x] `--backend all` includes cursor and aider when detected
 - [x] `export` command (markdown + JSON)
 - [x] `prune` command for index hygiene
-- [ ] MCP server mode (`session-recall serve`, `install-mode --mcp`)
+- [x] MCP server mode (`session-recall serve`, `install-mode --mcp`)
 
-### v1.0 — Stable API + polish
-- [ ] Assistant message indexing (FTS search gap fix)
-- [ ] Stable `--json` output shapes documented and semver-committed
-- [ ] Full CI matrix (Python 3.10–3.13, macOS + Linux + Windows)
-- [ ] PyPI release with optional extras: `auto-memory[mcp]`
+### v1.0 ✅ — Stable API + polish
+- [x] Assistant message indexing (FTS search gap fix)
+- [x] Stable `--json` output shapes documented and semver-committed (`docs/api.md`)
+- [x] Full CI matrix (Python 3.10–3.13, macOS + Linux + Windows)
+- [x] PyPI release with optional extras: `auto-memory[mcp]`
