@@ -21,6 +21,8 @@ TIER_MAP = {
     "show": 3,                                    # Tier 3 — deep dive
     "health": 0, "schema-check": 0,              # Tier 0 — meta/ops
     "calibrate": 0,                               # Tier 0 — meta (Phase 4)
+    "cc-index": 0,                                # Tier 0 — Claude Code index
+    "install-mode": 0,                            # Tier 0 — install/hook setup
 }
 
 
@@ -28,6 +30,8 @@ def main() -> None:
     telemetry.init(TELEMETRY_PATH)
     t0 = time.monotonic()
     parser = argparse.ArgumentParser(prog="auto-memory", description="Query Copilot CLI session history")
+    parser.add_argument("--backend", choices=["copilot", "claude"], default=None,
+                        help="Session backend (default: auto-detect)")
     sub = parser.add_subparsers(dest="command")
 
     p_list = sub.add_parser("list", help="Recent sessions")
@@ -67,6 +71,14 @@ def main() -> None:
     p_health = sub.add_parser("health", help="Health check (9 dimensions)")
     p_health.add_argument("--json", action="store_true")
 
+    p_cci = sub.add_parser("cc-index", help="Build/update Claude Code session index")
+    p_cci.add_argument("--rebuild", action="store_true")
+    p_cci.add_argument("--status", action="store_true")
+
+    p_im = sub.add_parser("install-mode", help="Detect Claude Code surfaces and configure hooks")
+    p_im.add_argument("--setup", action="store_true")
+    p_im.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -93,6 +105,12 @@ def main() -> None:
         exit_code = run(args)
     elif args.command == "health":
         from .commands.health import run
+        exit_code = run(args)
+    elif args.command == "cc-index":
+        from .commands.index_cc import run
+        exit_code = run(args)
+    elif args.command == "install-mode":
+        from .commands.install_mode import run
         exit_code = run(args)
     else:
         print(f"'{args.command}' not yet implemented. Coming in Phase 2.", file=sys.stderr)

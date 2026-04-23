@@ -1,0 +1,67 @@
+"""Detect Claude Code projects and decode path-encoded directory names."""
+from __future__ import annotations
+import pathlib
+import re
+
+
+CC_PROJECTS_DIR = pathlib.Path.home() / ".claude" / "projects"
+
+
+def decode_project_path(encoded: str) -> str:
+    """Decode 'C--Users-foo-repo' back to 'C:\\Users\\foo\\repo' (Windows) or '/Users/foo/repo' (Unix)."""
+    # Windows: starts with a drive letter pattern like 'C--'
+    m = re.match(r'^([A-Za-z])--(.+)$', encoded)
+    if m:
+        drive, rest = m.group(1), m.group(2)
+        return drive + ":\\" + rest.replace("-", "\\")
+    # Unix: starts with no drive letter
+    return "/" + encoded.replace("-", "/")
+
+
+def encode_project_path(path: str) -> str:
+    """Encode 'C:\\Users\\foo\\repo' to 'C--Users-foo-repo'."""
+    import os
+    if os.name == 'nt' and len(path) >= 2 and path[1] == ':':
+        drive = path[0]
+        rest = path[2:].lstrip('\\/')
+        rest_encoded = rest.replace('\\', '-').replace('/', '-')
+        return f"{drive}--{rest_encoded}"
+    return path.lstrip('/').replace('/', '-').replace('\\', '-')
+
+
+def list_projects() -> list[dict]:
+    """Return list of {encoded, decoded, path, session_count} for all CC projects."""
+    if not CC_PROJECTS_DIR.exists():
+        return []
+    results = []
+    for d in CC_PROJECTS_DIR.iterdir():
+        if not d.is_dir():
+            continue
+        sessions = list(d.glob("*.jsonl"))
+        results.append({
+            "encoded": d.name,
+            "decoded": decode_project_path(d.name),
+            "path": d,
+            "session_count": len(sessions),
+        })
+    return sorted(results, key=lambda x: x["session_count"], reverse=True)
+
+
+def find_project_dir(cwd: str) -> pathlib.Path | None:
+    """Find the Claude Code project dir for a given working directory path."""
+    encoded = encode_project_path(cwd)
+    candidate = CC_PROJECTS_DIR / encoded
+    return candidate if candidate.exists() else None
+
+
+def list_session_files(project_dir: pathlib.Path | None = None) -> list[pathlib.Path]:
+    """List all .jsonl session files, optionally filtered to one project."""
+    if project_dir:
+        return sorted(project_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not CC_PROJECTS_DIR.exists():
+        return []
+    files = []
+    for d in CC_PROJECTS_DIR.iterdir():
+        if d.is_dir():
+            files.extend(d.glob("*.jsonl"))
+    return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
