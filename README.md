@@ -1,4 +1,4 @@
-# auto-memory
+# claude-auto-mem
 
 ## Your AI coding agent has amnesia. Here's the fix.
 
@@ -6,7 +6,7 @@
 
 > Built by [Desi Villanueva](https://github.com/dezgit2025)
 
-[![PyPI](https://img.shields.io/pypi/v/auto-memory)](https://pypi.org/project/auto-memory/)
+[![PyPI](https://img.shields.io/pypi/v/claude-auto-mem)](https://pypi.org/project/claude-auto-mem/)
 [![CI](https://github.com/dezgit2025/auto-memory/actions/workflows/test.yml/badge.svg)](https://github.com/dezgit2025/auto-memory/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org)
@@ -25,7 +25,7 @@
 **Copilot CLI (existing):**
 
 ```bash
-pip install auto-memory        # or: git clone + ./install.sh
+pip install claude-auto-mem        # or: git clone + ./install.sh
 session-recall health          # verify it works
 ```
 
@@ -34,7 +34,7 @@ Now give your agent a memory. Point it at [`deploy/install.md`](deploy/install.m
 **Claude Code (new):**
 
 ```bash
-pip install auto-memory
+pip install claude-auto-mem
 session-recall cc-index        # build the local session index
 session-recall install-mode --setup   # wire SessionStart hook into ~/.claude/settings.json
 ```
@@ -75,13 +75,13 @@ Here's the cost comparison that made me build this:
 | `grep -r "auth" src/` | ~5,000-10,000 | 500 results, mostly irrelevant |
 | `find . -name "*.py"` | ~2,000 | Every Python file, no context |
 | Agent re-orientation | ~2,000 | You re-explaining yesterday |
-| **`auto-memory files --json --limit 10`** | **~50** | **Exactly the 10 files you touched yesterday** |
+| **`claude-auto-mem files --json --limit 10`** | **~50** | **Exactly the 10 files you touched yesterday** |
 
 **50 tokens vs 10,000 — a 200x improvement.**
 
 ## Before & After
 
-**Before auto-memory** — new session on a project:
+**Before claude-auto-mem** — new session on a project:
 
 ```
 You: Fix the failing test in the auth module
@@ -102,16 +102,16 @@ Agent: Let me search for that...
 
 Total: ~16K tokens burned, 8 minutes elapsed, agent still isn't oriented.
 
-**After auto-memory** — same scenario:
+**After claude-auto-mem** — same scenario:
 
 ```
 You: Fix the failing test in the auth module
 
-Agent: [auto-recall: auto-memory files --json --limit 10]
+Agent: [auto-recall: claude-auto-mem files --json --limit 10]
        → src/auth/refresh.py, tests/test_refresh_edge_cases.py,
          src/auth/token_store.py (last touched 14h ago)
 
-       [auto-recall: auto-memory list --json --limit 3]
+       [auto-recall: claude-auto-mem list --json --limit 3]
        → Yesterday: "Fixed token refresh race condition, one edge case
          test still failing on expired token + network timeout combo"
 
@@ -127,7 +127,7 @@ Total: ~1.1K tokens, 30 seconds, agent is immediately productive.
 
 | Approach | Dependencies | Writes to DB | Setup | Agent-native |
 |----------|-------------|-------------|-------|-------------|
-| **auto-memory** | None (stdlib) | ❌ Read-only | `pip install` | ✅ Instruction-file |
+| **claude-auto-mem** | None (stdlib) | ❌ Read-only | `pip install` | ✅ Instruction-file |
 | MCP server | Node.js runtime | Varies | Server config | ❌ Protocol layer |
 | Custom hooks | Varies | Often yes | Hook scripts | ❌ Event-driven |
 | Manual grep | None | ❌ | None | ❌ Manual |
@@ -137,7 +137,7 @@ Total: ~1.1K tokens, 30 seconds, agent is immediately productive.
 - **Context window = RAM.** Fast, limited, clears on restart.
 - **session-store.db = Disk.** Persistent, searchable, grows forever.
 
-auto-memory is the **page fault handler** — it pulls exact facts from disk in ~50 tokens when the agent needs them.
+claude-auto-mem is the **page fault handler** — it pulls exact facts from disk in ~50 tokens when the agent needs them.
 
 **It's not unlimited context. It's unlimited context *recall*.** In practice, same thing.
 
@@ -148,12 +148,12 @@ auto-memory is the **page fault handler** — it pulls exact facts from disk in 
 ```
 ┌─────────────────────────────────────────────────┐
 │  copilot-instructions.md                        │
-│  "Run auto-memory FIRST on every prompt"         │
+│  "Run claude-auto-mem FIRST on every prompt"         │
 └──────────────────┬──────────────────────────────┘
                    │ agent reads instruction
                    ▼
 ┌─────────────────────────────────────────────────┐
-│  auto-memory CLI                                │
+│  claude-auto-mem CLI                                │
 │  (pure Python, zero deps, read-only)            │
 └──────────────────┬──────────────────────────────┘
                    │ SELECT ... FROM sessions
@@ -174,14 +174,14 @@ auto-memory is the **page fault handler** — it pulls exact facts from disk in 
                    │ hook fires on every new session
                    ▼
 ┌─────────────────────────────────────────────────┐
-│  auto-memory CLI                                │
+│  claude-auto-mem CLI                                │
 │  (pure Python, zero deps)                       │
 └──────────────────┬──────────────────────────────┘
                    │ SELECT ... FROM FTS5 index
                    ▼
 ┌─────────────────────────────────────────────────┐
 │  ~/.claude/.sr-index.db                         │
-│  (SQLite FTS5, built by auto-memory from        │
+│  (SQLite FTS5, built by claude-auto-mem from        │
 │   ~/.claude/projects/ JSONL session files)      │
 └─────────────────────────────────────────────────┘
 ```
@@ -242,7 +242,7 @@ session-recall schema-check    # validate DB schema after Copilot CLI upgrades
 
 ## Claude Code Backend
 
-auto-memory now includes a first-class Claude Code backend that reads `~/.claude/projects/` JSONL session files and builds a local SQLite FTS5 index at `~/.claude/.sr-index.db`.
+claude-auto-mem now includes a first-class Claude Code backend that reads `~/.claude/projects/` JSONL session files and builds a local SQLite FTS5 index at `~/.claude/.sr-index.db`.
 
 ### Quick setup (2 steps)
 
@@ -264,7 +264,7 @@ session-recall cc-index --rebuild       # force a full rebuild from scratch
 session-recall cc-index --status        # show index freshness and session count
 ```
 
-The index lives at `~/.claude/.sr-index.db`. It is owned and written exclusively by auto-memory — Claude Code's JSONL files are never modified.
+The index lives at `~/.claude/.sr-index.db`. It is owned and written exclusively by claude-auto-mem — Claude Code's JSONL files are never modified.
 
 ### Hook installation
 
@@ -322,7 +322,7 @@ Dim Name                   Zone     Score  Detail
 
 ## Agent Integration
 
-auto-memory works with **any agent that supports instruction files** — GitHub Copilot CLI, Claude Code, Cursor, Aider, Windsurf, and more. Installation wires session-recall into your agent's instruction file so it runs context recall automatically.
+claude-auto-mem works with **any agent that supports instruction files** — GitHub Copilot CLI, Claude Code, Cursor, Aider, Windsurf, and more. Installation wires session-recall into your agent's instruction file so it runs context recall automatically.
 
 See [`deploy/install.md`](deploy/install.md) for setup and [`copilot-instructions-template.md`](copilot-instructions-template.md) for integration patterns.
 
@@ -337,13 +337,13 @@ See [`UPGRADE-COPILOT-CLI.md`](UPGRADE-COPILOT-CLI.md) for schema validation aft
 ## FAQ
 
 **Is it safe? Does it modify my session data?**
-No. auto-memory is strictly read-only on your agent's session data. It never writes to `~/.copilot/session-store.db` or Claude Code's JSONL files under `~/.claude/projects/`. The only file auto-memory writes is its own index at `~/.claude/.sr-index.db`.
+No. claude-auto-mem is strictly read-only on your agent's session data. It never writes to `~/.copilot/session-store.db` or Claude Code's JSONL files under `~/.claude/projects/`. The only file claude-auto-mem writes is its own index at `~/.claude/.sr-index.db`.
 
 **What happens when Copilot CLI updates its schema?**
 Run `session-recall schema-check` to validate. The tool fails fast on schema drift rather than returning bad data. See [UPGRADE-COPILOT-CLI.md](UPGRADE-COPILOT-CLI.md).
 
 **Can I use both Copilot CLI and Claude Code at the same time?**
-Yes. Use `--backend copilot` or `--backend claude` to query either one explicitly. Without the flag, auto-memory picks whichever DB it finds first (Copilot takes priority if both are present).
+Yes. Use `--backend copilot` or `--backend claude` to query either one explicitly. Without the flag, claude-auto-mem picks whichever DB it finds first (Copilot takes priority if both are present).
 
 ## Roadmap
 
@@ -353,7 +353,7 @@ See [ROADMAP.md](ROADMAP.md).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines. Issues, PRs, and docs improvements are welcome.
 
-⭐ **If auto-memory saved you time, [star the repo](https://github.com/dezgit2025/auto-memory)** — it's the best way to help others find it.
+⭐ **If claude-auto-mem saved you time, [star the repo](https://github.com/dezgit2025/auto-memory)** — it's the best way to help others find it.
 
 🔗 **Share it:** *"Zero-dependency CLI that gives your AI coding agent session memory. Read-only, schema-checked, ~50 tokens per prompt."* → [github.com/dezgit2025/auto-memory](https://github.com/dezgit2025/auto-memory)
 
