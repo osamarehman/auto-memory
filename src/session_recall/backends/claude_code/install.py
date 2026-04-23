@@ -263,10 +263,11 @@ def wire_mcp_config(config_path: "pathlib.Path", *, dry_run: bool = False) -> di
     if "session-recall" in servers:
         return {"changed": False, "path": str(config_path), "action": "already_wired"}
 
-    servers["session-recall"] = _MCP_ENTRY
+    import copy
+    servers["session-recall"] = copy.deepcopy(_MCP_ENTRY)
 
     if dry_run:
-        return {"action": "dry_run", "path": str(config_path)}
+        return {"changed": True, "action": "dry_run", "path": str(config_path)}
 
     tmp = config_path.with_suffix(".tmp")
     config_path.parent.mkdir(parents=True, exist_ok=True)

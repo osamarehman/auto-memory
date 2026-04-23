@@ -12,13 +12,13 @@ try:
 except ImportError:
     _mcp_available = False
 
-from .backends import get_backend
-
 
 def build_server(backend_name: str | None = None) -> "FastMCP":
     """Create FastMCP server and register session-recall tools."""
     if not _mcp_available:
         raise ImportError(_IMPORT_ERROR_MSG)
+
+    from .backends import get_backend
 
     srv = FastMCP("session-recall")
 

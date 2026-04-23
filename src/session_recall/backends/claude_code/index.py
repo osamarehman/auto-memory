@@ -41,11 +41,17 @@ def _open(path: pathlib.Path | None = None) -> sqlite3.Connection:
     for stmt in _DDL_STATEMENTS:
         conn.execute(stmt)
     conn.commit()
+    # Detect stale schema (pre-assistant_summary). Auto-migrate by deleting the DB
+    # so the caller can retry; this keeps --rebuild working without manual file deletion.
     cols = {row[1] for row in conn.execute("PRAGMA table_info(cc_turns)").fetchall()}
     if "assistant_summary" not in cols:
         conn.close()
+        if path != INDEX_PATH or not path.exists():
+            raise RuntimeError("Index schema is out of date — run: session-recall cc-index --rebuild")
+        path.unlink()
         raise RuntimeError(
-            "Index schema is out of date — run: session-recall cc-index --rebuild"
+            "Index schema was out of date and has been removed. "
+            "Run: session-recall cc-index --rebuild"
         )
     return conn
 

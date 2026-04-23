@@ -122,10 +122,6 @@ def test_extract_text_empty():
     assert _extract_text(None) == ""
 
 
-def _write_jsonl(path, records):
-    path.write_text("\n".join(json.dumps(r) for r in records))
-
-
 def test_parse_session_turn_has_assistant_summary(tmp_path):
     sid = "asummary-long-0001"
     f = tmp_path / f"{sid}.jsonl"

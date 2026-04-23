@@ -1,7 +1,10 @@
 """serve command — start MCP tool server."""
 import sys
 
-from ..mcp_server import _IMPORT_ERROR_MSG
+_IMPORT_ERROR_MSG = (
+    "MCP support requires the 'mcp' package.\n"
+    "Install with: pip install \"auto-memory[mcp]\""
+)
 
 
 def run(args) -> int:
