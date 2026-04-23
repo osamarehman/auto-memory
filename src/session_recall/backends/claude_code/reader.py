@@ -9,19 +9,23 @@ def _extract_text(content) -> str:
     """Extract plain text from message content (str or list of blocks)."""
     if isinstance(content, str):
         return content[:500]
-    if isinstance(content, list):
-        parts = []
-        for block in content:
-            if isinstance(block, dict):
-                if block.get("type") == "text":
-                    parts.append(block.get("text", "")[:300])
-                elif block.get("type") == "tool_use":
-                    parts.append(f"[{block.get('name', 'tool')}]")
-                elif block.get("type") == "tool_result":
-                    c = block.get("content", "")
-                    parts.append((c[:200] if isinstance(c, str) else str(c)[:200]))
-        return " ".join(parts)[:500]
-    return ""
+    if not isinstance(content, list):
+        return ""
+
+    parts = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        btype = block.get("type")
+        if btype == "text":
+            parts.append(block.get("text", "")[:300])
+        elif btype == "tool_use":
+            parts.append(f"[{block.get('name', 'tool')}]")
+        elif btype == "tool_result":
+            c = block.get("content", "")
+            text = c if isinstance(c, str) else str(c)
+            parts.append(text[:200])
+    return " ".join(parts)[:500]
 
 
 def iter_records(path: pathlib.Path) -> Iterator[dict]:
@@ -36,6 +40,28 @@ def iter_records(path: pathlib.Path) -> Iterator[dict]:
                 yield json.loads(line)
             except json.JSONDecodeError:
                 continue
+
+
+def _is_tool_result_message(content) -> bool:
+    """True if a user message content is actually a tool_result (not a real prompt)."""
+    return isinstance(content, list) and any(
+        isinstance(b, dict) and b.get("type") == "tool_result"
+        for b in content
+    )
+
+
+def _collect_tool_files(content, files: dict[str, str]) -> None:
+    """Collect file paths referenced by tool_use blocks into the files dict."""
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        inp = block.get("input", {})
+        # Read/Write/Edit tools have file_path or path
+        fp = inp.get("file_path") or inp.get("path")
+        if fp and isinstance(fp, str):
+            files.setdefault(fp, block.get("name", ""))
 
 
 def parse_session(path: pathlib.Path) -> dict | None:
@@ -55,10 +81,9 @@ def parse_session(path: pathlib.Path) -> dict | None:
     version = None
     first_ts = None
     last_ts = None
-    turns = []
+    turns: list[dict] = []
     files: dict[str, str] = {}  # file_path -> tool_name
     last_prompt = None
-
     pending_user: str | None = None
 
     for rec in iter_records(path):
@@ -79,36 +104,16 @@ def parse_session(path: pathlib.Path) -> dict | None:
             last_prompt = rec.get("lastPrompt", "")
 
         elif rtype == "user":
-            msg = rec.get("message", {})
-            content = msg.get("content", "")
-            # skip tool result records for turn pairing
-            if isinstance(content, list) and any(
-                isinstance(b, dict) and b.get("type") == "tool_result"
-                for b in content
-            ):
-                # extract file paths from tool results
-                for b in content:
-                    if isinstance(b, dict) and b.get("type") == "tool_result":
-                        # heuristic: look for file paths in stdout
-                        tr = rec.get("toolUseResult", {})
-                        continue
+            content = rec.get("message", {}).get("content", "")
+            # skip tool_result records for turn pairing
+            if _is_tool_result_message(content):
                 continue
             pending_user = _extract_text(content)
 
         elif rtype == "assistant":
-            msg = rec.get("message", {})
-            content = msg.get("content", [])
+            content = rec.get("message", {}).get("content", [])
             assistant_text = _extract_text(content)
-            # collect tool calls as file references
-            if isinstance(content, list):
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "tool_use":
-                        inp = block.get("input", {})
-                        # Read/Write/Edit tools have file_path or path
-                        fp = inp.get("file_path") or inp.get("path")
-                        tool_name = block.get("name", "")
-                        if fp and isinstance(fp, str):
-                            files.setdefault(fp, tool_name)
+            _collect_tool_files(content, files)
             if pending_user is not None:
                 turns.append({
                     "user": pending_user,
@@ -122,13 +127,13 @@ def parse_session(path: pathlib.Path) -> dict | None:
         return None
 
     # derive repository from cwd (owner/repo from last two path segments)
-    repository = _cwd_to_repo(cwd) if cwd else None
+    repository = _cwd_to_repo(cwd) if cwd else ""
     summary = last_prompt or (turns[0]["user"][:120] if turns else "")
 
     return {
         "id": session_id,
         "cwd": cwd or "",
-        "repository": repository or "",
+        "repository": repository,
         "branch": branch or "",
         "version": version or "",
         "first_seen": first_ts or "",
@@ -143,7 +148,6 @@ def parse_session(path: pathlib.Path) -> dict | None:
 
 def _cwd_to_repo(cwd: str) -> str:
     """Extract owner/repo-style identifier from a cwd path."""
-    import pathlib
     p = pathlib.Path(cwd)
     parts = p.parts
     if len(parts) >= 2:

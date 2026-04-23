@@ -28,10 +28,12 @@ TIER_MAP = {
     "serve": 0,                                   # Tier 0 — MCP stdio server
 }
 
+# Commands that route through the Copilot-only SQLite command modules when
+# a non-copilot backend is not explicitly selected.
+_NON_COPILOT_BACKENDS = ("claude", "aider", "cursor", "all", None)
 
-def main() -> None:
-    telemetry.init(TELEMETRY_PATH)
-    t0 = time.monotonic()
+
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="auto-memory", description="Query Copilot CLI session history")
     parser.add_argument("--backend", choices=["copilot", "claude", "aider", "cursor", "all"], default=None,
                         help="Session backend (default: auto-detect)")
@@ -105,129 +107,131 @@ def main() -> None:
 
     sub.add_parser("serve", help="Start MCP tool server (stdio)")
 
+    return parser
+
+
+def _run_backend_command(args, backend_name) -> int:
+    """Handle commands that fan out to a non-copilot backend (or 'all')."""
+    from .backends import get_backend
+    from .util.format_output import output
+
+    b = get_backend(backend_name)
+    json_mode = getattr(args, "json", False)
+    repo = getattr(args, "repo", None)
+
+    if args.command == "list":
+        data = b.list_sessions(
+            repo=repo,
+            limit=getattr(args, "limit", None) or 10,
+            days=getattr(args, "days", None) or 30,
+        )
+        output({"repo": repo or "all", "count": len(data), "sessions": data}, json_mode=json_mode)
+        return 0
+
+    if args.command == "files":
+        data = b.list_files(
+            repo=repo,
+            limit=getattr(args, "limit", None) or 20,
+            days=getattr(args, "days", None) or 30,
+        )
+        output({"repo": repo or "all", "count": len(data), "files": data}, json_mode=json_mode)
+        return 0
+
+    if args.command == "show":
+        result = b.show_session(args.session_id, turns=getattr(args, "turns", None))
+        if result is None:
+            print("session not found", file=sys.stderr)
+            return 1
+        output(result, json_mode=json_mode)
+        return 0
+
+    if args.command == "search":
+        data = b.search(
+            args.query,
+            repo=repo,
+            limit=getattr(args, "limit", None) or 10,
+            days=getattr(args, "days", None) or 30,
+        )
+        output({"query": args.query, "count": len(data), "results": data}, json_mode=json_mode)
+        return 0
+
+    if args.command == "health":
+        output(b.health(), json_mode=json_mode)
+        return 0
+
+    # schema-check / checkpoints are not available on non-copilot backends.
+    print(f"'{args.command}' is not available for the {backend_name} backend.", file=sys.stderr)
+    return 1
+
+
+def _dispatch(args) -> int:
+    """Dispatch to the appropriate command module; returns exit code."""
+    backend_name = getattr(args, "backend", None)
+    cmd = args.command
+
+    # Commands that may be served by non-copilot backends (or 'all').
+    _backend_aware = {"list", "schema-check", "files", "checkpoints", "show", "search", "health"}
+    if cmd in _backend_aware and backend_name in _NON_COPILOT_BACKENDS:
+        return _run_backend_command(args, backend_name)
+
+    # Copilot-only / meta commands — delegate to dedicated command modules.
+    if cmd == "list":
+        from .commands.list_sessions import run
+        return run(args)
+    if cmd == "schema-check":
+        from .commands.schema_check_cmd import run
+        return run(args)
+    if cmd == "files":
+        from .commands.files import run
+        return run(args)
+    if cmd == "checkpoints":
+        from .commands.checkpoints import run
+        return run(args)
+    if cmd == "show":
+        from .commands.show_session import run
+        return run(args)
+    if cmd == "search":
+        from .commands.search import run
+        return run(args)
+    if cmd == "health":
+        from .commands.health import run
+        return run(args)
+    if cmd == "cc-index":
+        from .commands.index_cc import run
+        return run(args)
+    if cmd == "install-mode":
+        from .commands.install_mode import run
+        return run(args)
+    if cmd == "export":
+        from .commands.export import run
+        return run(args)
+    if cmd == "prune":
+        from .commands.prune import run
+        return run(args)
+    if cmd == "serve":
+        from .commands.serve import run
+        return run(args)
+
+    print(f"'{cmd}' not yet implemented. Coming in Phase 2.", file=sys.stderr)
+    return 1
+
+
+def main() -> None:
+    telemetry.init(TELEMETRY_PATH)
+    t0 = time.monotonic()
+
+    parser = _build_parser()
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
         sys.exit(1)
 
-    _backend_name = getattr(args, "backend", None)
-    exit_code = 1
-    _non_copilot_backends = ("claude", "aider", "cursor", "all", None)
-    if args.command == "list":
-        if _backend_name in _non_copilot_backends:
-            from .backends import get_backend
-            from .util.format_output import output
-            b = get_backend(_backend_name)
-            repo = getattr(args, "repo", None)
-            data = b.list_sessions(
-                repo=repo,
-                limit=getattr(args, "limit", None) or 10,
-                days=getattr(args, "days", None) or 30,
-            )
-            output({"repo": repo or "all", "count": len(data), "sessions": data},
-                   json_mode=getattr(args, "json", False))
-            exit_code = 0
-        else:
-            from .commands.list_sessions import run
-            exit_code = run(args)
-    elif args.command == "schema-check":
-        if _backend_name in _non_copilot_backends:
-            print(f"'schema-check' is not available for the {_backend_name} backend.", file=sys.stderr)
-            exit_code = 1
-        else:
-            from .commands.schema_check_cmd import run
-            exit_code = run(args)
-    elif args.command == "files":
-        if _backend_name in _non_copilot_backends:
-            from .backends import get_backend
-            from .util.format_output import output
-            b = get_backend(_backend_name)
-            repo = getattr(args, "repo", None)
-            data = b.list_files(
-                repo=repo,
-                limit=getattr(args, "limit", None) or 20,
-                days=getattr(args, "days", None) or 30,
-            )
-            output({"repo": repo or "all", "count": len(data), "files": data},
-                   json_mode=getattr(args, "json", False))
-            exit_code = 0
-        else:
-            from .commands.files import run
-            exit_code = run(args)
-    elif args.command == "checkpoints":
-        if _backend_name in _non_copilot_backends:
-            print(f"'checkpoints' is not available for the {_backend_name} backend.", file=sys.stderr)
-            exit_code = 1
-        else:
-            from .commands.checkpoints import run
-            exit_code = run(args)
-    elif args.command == "show":
-        if _backend_name in _non_copilot_backends:
-            from .backends import get_backend
-            from .util.format_output import output
-            b = get_backend(_backend_name)
-            result = b.show_session(args.session_id, turns=getattr(args, "turns", None))
-            if result is None:
-                print("session not found", file=sys.stderr)
-                exit_code = 1
-            else:
-                output(result, json_mode=getattr(args, "json", False))
-                exit_code = 0
-        else:
-            from .commands.show_session import run
-            exit_code = run(args)
-    elif args.command == "search":
-        if _backend_name in _non_copilot_backends:
-            from .backends import get_backend
-            from .util.format_output import output
-            b = get_backend(_backend_name)
-            repo = getattr(args, "repo", None)
-            data = b.search(
-                args.query,
-                repo=repo,
-                limit=getattr(args, "limit", None) or 10,
-                days=getattr(args, "days", None) or 30,
-            )
-            output({"query": args.query, "count": len(data), "results": data},
-                   json_mode=getattr(args, "json", False))
-            exit_code = 0
-        else:
-            from .commands.search import run
-            exit_code = run(args)
-    elif args.command == "health":
-        if _backend_name in _non_copilot_backends:
-            from .backends import get_backend
-            from .util.format_output import output
-            b = get_backend(_backend_name)
-            data = b.health()
-            output(data, json_mode=getattr(args, "json", False))
-            exit_code = 0
-        else:
-            from .commands.health import run
-            exit_code = run(args)
-    elif args.command == "cc-index":
-        from .commands.index_cc import run
-        exit_code = run(args)
-    elif args.command == "install-mode":
-        from .commands.install_mode import run
-        exit_code = run(args)
-    elif args.command == "export":
-        from .commands.export import run
-        exit_code = run(args)
-    elif args.command == "prune":
-        from .commands.prune import run
-        exit_code = run(args)
-    elif args.command == "serve":
-        from .commands.serve import run
-        exit_code = run(args)
-    else:
-        print(f"'{args.command}' not yet implemented. Coming in Phase 2.", file=sys.stderr)
+    exit_code = _dispatch(args)
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     tier = TIER_MAP.get(args.command)  # None if command unknown
     qhash = None
     sid_prefix = None
-    wtier = None  # Phase 4 will populate this
     if args.command == "search":
         qhash = telemetry.query_hash(getattr(args, "query", "") or "")
     elif args.command == "show":
@@ -235,7 +239,7 @@ def main() -> None:
         sid_prefix = sid[:8] if sid else None
     telemetry.record(cmd=args.command, duration_ms=duration_ms, exit_code=exit_code,
                      tier=tier, query_hash=qhash, session_id_prefix=sid_prefix,
-                     window_tier=wtier)
+                     window_tier=None)  # Phase 4 will populate window_tier
     sys.exit(exit_code)
 
 

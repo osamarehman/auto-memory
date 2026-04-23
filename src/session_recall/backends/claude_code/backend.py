@@ -6,6 +6,15 @@ from .detect import CC_PROJECTS_DIR
 from . import index as _idx
 
 
+def _worst_zone(zones: list[str]) -> str:
+    """Return the worst zone across dimensions (RED > AMBER > GREEN)."""
+    if "RED" in zones:
+        return "RED"
+    if "AMBER" in zones:
+        return "AMBER"
+    return "GREEN"
+
+
 class ClaudeCodeBackend(SessionBackend):
     @property
     def name(self) -> str:
@@ -70,7 +79,9 @@ class ClaudeCodeBackend(SessionBackend):
         from .health.scoring import overall_score
         dims = [dim_index, dim_freshness, dim_corpus, dim_latency, dim_coverage, dim_surfaces]
         results = [d.check() for d in dims]
-        score = overall_score(results)
         zones = [r.get("zone", "GREEN") for r in results]
-        zone = "RED" if "RED" in zones else ("AMBER" if "AMBER" in zones else "GREEN")
-        return {"score": score, "zone": zone, "dimensions": results}
+        return {
+            "score": overall_score(results),
+            "zone": _worst_zone(zones),
+            "dimensions": results,
+        }

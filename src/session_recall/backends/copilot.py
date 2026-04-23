@@ -150,18 +150,14 @@ class CopilotBackend(SessionBackend):
             if not row:
                 return None
             full_id = row["id"]
+            turns_sql = (
+                "SELECT turn_index, user_message, assistant_response, timestamp "
+                "FROM turns WHERE session_id = ? ORDER BY turn_index"
+            )
             if turns is not None:
-                turns_rows = conn.execute(
-                    "SELECT turn_index, user_message, assistant_response, timestamp "
-                    "FROM turns WHERE session_id = ? ORDER BY turn_index LIMIT ?",
-                    (full_id, turns),
-                ).fetchall()
+                turns_rows = conn.execute(turns_sql + " LIMIT ?", (full_id, turns)).fetchall()
             else:
-                turns_rows = conn.execute(
-                    "SELECT turn_index, user_message, assistant_response, timestamp "
-                    "FROM turns WHERE session_id = ? ORDER BY turn_index",
-                    (full_id,),
-                ).fetchall()
+                turns_rows = conn.execute(turns_sql, (full_id,)).fetchall()
             mx = 500
             turn_list = [
                 {

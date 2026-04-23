@@ -2,12 +2,8 @@
 from .base import SessionBackend
 from .copilot import CopilotBackend
 
-_BACKENDS = {
-    "copilot": CopilotBackend,
-}
 
-# Lazy import for claude_code to avoid import errors if its deps aren't present
-def _get_claude_backend():
+def _load_claude():
     try:
         from .claude_code import ClaudeCodeBackend
         return ClaudeCodeBackend
@@ -15,36 +11,55 @@ def _get_claude_backend():
         return None
 
 
+def _load_aider():
+    from .aider import AiderBackend
+    return AiderBackend
+
+
+def _load_cursor():
+    try:
+        from .cursor import CursorBackend
+        return CursorBackend
+    except ImportError:
+        return None
+
+
+# Ordered (name, loader) pairs — order controls auto-detect precedence.
+_BACKEND_LOADERS = [
+    ("copilot", lambda: CopilotBackend),
+    ("claude",  _load_claude),
+    ("aider",   _load_aider),
+    ("cursor",  _load_cursor),
+]
+
+
 def get_backend(name: str | None = None) -> SessionBackend:
     """Return a backend instance. name=None → auto-detect."""
     if name == "all":
         from .all import AllBackend
         return AllBackend()
-    if name == "copilot" or name is None:
-        b = CopilotBackend()
-        if b.is_available() or name == "copilot":
-            return b
-    if name == "claude" or name is None:
-        cls = _get_claude_backend()
-        if cls:
-            b = cls()
-            if b.is_available() or name == "claude":
-                return b
-    if name == "aider" or name is None:
-        from .aider import AiderBackend
-        b = AiderBackend()
-        if b.is_available() or name == "aider":
-            return b
-    if name == "cursor" or name is None:
-        try:
-            from .cursor import CursorBackend
-            b = CursorBackend()
-            if b.is_available() or name == "cursor":
-                return b
-        except ImportError:
-            pass
+
+    for backend_name, loader in _BACKEND_LOADERS:
+        if name is not None and name != backend_name:
+            continue
+        cls = loader()
+        if cls is None:
+            continue
+        instance = cls()
+        # When explicitly requested, return even if unavailable; otherwise require availability.
+        if name == backend_name or instance.is_available():
+            return instance
+
     # fallback
     return CopilotBackend()
 
 
-__all__ = ["SessionBackend", "CopilotBackend", "get_backend", "AllBackend"]
+__all__ = ["SessionBackend", "CopilotBackend", "AllBackend", "get_backend"]
+
+
+def __getattr__(name):
+    # Lazy-export AllBackend to avoid importing optional backends at module load.
+    if name == "AllBackend":
+        from .all import AllBackend
+        return AllBackend
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

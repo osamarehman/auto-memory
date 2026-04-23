@@ -8,15 +8,17 @@ _IMPORT_ERROR_MSG = (
 
 try:
     from mcp.server.fastmcp import FastMCP
-    _mcp_available = True
-except ImportError:
-    _mcp_available = False
+except ImportError as _import_err:
+    FastMCP = None  # type: ignore[assignment]
+    _IMPORT_EXC: ImportError | None = _import_err
+else:
+    _IMPORT_EXC = None
 
 
 def build_server(backend_name: str | None = None) -> "FastMCP":
     """Create FastMCP server and register session-recall tools."""
-    if not _mcp_available:
-        raise ImportError(_IMPORT_ERROR_MSG)
+    if FastMCP is None:
+        raise ImportError(_IMPORT_ERROR_MSG) from _IMPORT_EXC
 
     from .backends import get_backend
 

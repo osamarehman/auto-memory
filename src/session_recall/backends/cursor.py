@@ -13,8 +13,11 @@ import os
 import pathlib
 import sqlite3
 import sys
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+from .base import SessionBackend
 
 
 # ---------------------------------------------------------------------------
@@ -26,24 +29,24 @@ def _cursor_base() -> pathlib.Path:
     if sys.platform == "win32":
         appdata = os.environ.get("APPDATA", "")
         return pathlib.Path(appdata) / "Cursor" / "User" / "workspaceStorage"
-    elif sys.platform == "darwin":
+    if sys.platform == "darwin":
         return pathlib.Path.home() / "Library" / "Application Support" / "Cursor" / "User" / "workspaceStorage"
-    else:
-        # Linux / other POSIX
-        xdg = os.environ.get("XDG_CONFIG_HOME", "")
-        if xdg:
-            return pathlib.Path(xdg) / "Cursor" / "User" / "workspaceStorage"
-        return pathlib.Path.home() / ".config" / "Cursor" / "User" / "workspaceStorage"
+    # Linux / other POSIX
+    xdg = os.environ.get("XDG_CONFIG_HOME", "")
+    if xdg:
+        return pathlib.Path(xdg) / "Cursor" / "User" / "workspaceStorage"
+    return pathlib.Path.home() / ".config" / "Cursor" / "User" / "workspaceStorage"
 
-
-_CHAT_KEY = "workbench.panel.aichat.view.aichat.chatdata"
 
 # Alternative keys observed in different Cursor builds
 _CHAT_KEY_ALTS = [
-    _CHAT_KEY,
+    "workbench.panel.aichat.view.aichat.chatdata",
     "workbench.panel.aichat.view.aichat.chatData",
     "aiChat.chatData",
 ]
+
+_USER_TYPES = ("user", "human")
+_AI_TYPES = ("ai", "assistant", "bot")
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +86,19 @@ def _read_chat_json(db_path: pathlib.Path) -> Optional[dict]:
         conn.close()
 
 
+def _iter_workspace_dbs(base: pathlib.Path):
+    """Yield (workspace_dir, state.vscdb path) for each workspace with a DB."""
+    if not base.exists():
+        return
+    try:
+        for ws_dir in base.iterdir():
+            db = ws_dir / "state.vscdb"
+            if db.exists():
+                yield ws_dir, db
+    except Exception:
+        return
+
+
 # ---------------------------------------------------------------------------
 # Parsing helpers
 # ---------------------------------------------------------------------------
@@ -111,6 +127,23 @@ def _extract_text(bubble: dict) -> str:
     return str(text).strip()
 
 
+def _collect_files(bubbles: list) -> set[str]:
+    """Return the set of file paths referenced across bubbles."""
+    files: set[str] = set()
+    for b in bubbles:
+        for ctx in b.get("context") or []:
+            if isinstance(ctx, dict):
+                fp = ctx.get("path") or ctx.get("relativeWorkspacePath") or ""
+                if fp:
+                    files.add(fp)
+        for sel in b.get("selections") or []:
+            if isinstance(sel, dict):
+                fp = (sel.get("uri") or {}).get("path") or ""
+                if fp:
+                    files.add(fp)
+    return files
+
+
 def _tab_to_session(tab: dict, workspace_hash: str) -> Optional[dict]:
     """Convert a single Cursor chat *tab* dict to a normalised session dict."""
     try:
@@ -129,11 +162,10 @@ def _tab_to_session(tab: dict, workspace_hash: str) -> Optional[dict]:
         # Timestamps
         last_send_ms = tab.get("lastSendTime") or tab.get("updatedAt") or 0
         created_ms = tab.get("createdAt") or last_send_ms
-
         created_iso = _ms_to_iso(created_ms) if created_ms else ""
         date_str = created_iso[:10]
 
-        # Summary: use chatTitle, or first user bubble text (truncated)
+        # Summary: chatTitle, else first user bubble text (truncated), else fallback
         summary = (tab.get("chatTitle") or "").strip()
         if not summary:
             for b in bubbles:
@@ -144,26 +176,11 @@ def _tab_to_session(tab: dict, workspace_hash: str) -> Optional[dict]:
             summary = f"Cursor chat {tab_id[:8]}"
 
         # Count turns (user+ai pairs)
-        user_bubbles = [b for b in bubbles if b.get("type") in ("user", "human")]
-        ai_bubbles = [b for b in bubbles if b.get("type") in ("ai", "assistant", "bot")]
-        turns_count = max(len(user_bubbles), len(ai_bubbles))
+        user_count = sum(1 for b in bubbles if b.get("type") in _USER_TYPES)
+        ai_count = sum(1 for b in bubbles if b.get("type") in _AI_TYPES)
+        turns_count = max(user_count, ai_count)
 
-        # Files mentioned (Cursor attaches file context in some versions)
-        file_set: set[str] = set()
-        for b in bubbles:
-            for ctx in b.get("context") or []:
-                if isinstance(ctx, dict):
-                    fp = ctx.get("path") or ctx.get("relativeWorkspacePath") or ""
-                    if fp:
-                        file_set.add(fp)
-            # Also check selections / attachments
-            for sel in b.get("selections") or []:
-                if isinstance(sel, dict):
-                    fp = (sel.get("uri") or {}).get("path") or ""
-                    if fp:
-                        file_set.add(fp)
-
-        files_count = len(file_set)
+        file_set = _collect_files(bubbles)
 
         return {
             "id_short": id_short,
@@ -174,7 +191,7 @@ def _tab_to_session(tab: dict, workspace_hash: str) -> Optional[dict]:
             "date": date_str,
             "created_at": created_iso,
             "turns_count": turns_count,
-            "files_count": files_count,
+            "files_count": len(file_set),
             # Store raw data for show_session / search
             "_bubbles": bubbles,
             "_file_set": sorted(file_set),
@@ -195,45 +212,29 @@ class _Index:
         self._stamp: float = 0.0  # mtime sum when last built
 
     def _current_stamp(self) -> float:
-        base = _cursor_base()
-        if not base.exists():
-            return 0.0
         total = 0.0
-        try:
-            for d in base.iterdir():
-                db = d / "state.vscdb"
-                if db.exists():
-                    total += db.stat().st_mtime
-        except Exception:
-            pass
+        for _ws_dir, db in _iter_workspace_dbs(_cursor_base()):
+            try:
+                total += db.stat().st_mtime
+            except Exception:
+                continue
         return total
 
     def _build(self) -> None:
-        base = _cursor_base()
         sessions: list[dict] = []
-        if not base.exists():
-            self._sessions = sessions
-            self._stamp = 0.0
-            return
-        try:
-            for ws_dir in base.iterdir():
-                db = ws_dir / "state.vscdb"
-                if not db.exists():
+        for ws_dir, db in _iter_workspace_dbs(_cursor_base()):
+            data = _read_chat_json(db)
+            if not data:
+                continue
+            tabs = data.get("tabs") or data.get("sessions") or []
+            if not isinstance(tabs, list):
+                continue
+            for tab in tabs:
+                if not isinstance(tab, dict):
                     continue
-                data = _read_chat_json(db)
-                if not data:
-                    continue
-                tabs = data.get("tabs") or data.get("sessions") or []
-                if not isinstance(tabs, list):
-                    continue
-                for tab in tabs:
-                    if not isinstance(tab, dict):
-                        continue
-                    sess = _tab_to_session(tab, ws_dir.name)
-                    if sess:
-                        sessions.append(sess)
-        except Exception:
-            pass
+                sess = _tab_to_session(tab, ws_dir.name)
+                if sess:
+                    sessions.append(sess)
 
         # Sort newest first
         sessions.sort(
@@ -265,9 +266,6 @@ def _public(s: dict) -> dict:
 # Backend
 # ---------------------------------------------------------------------------
 
-from .base import SessionBackend  # noqa: E402
-
-
 class CursorBackend(SessionBackend):
     """Session backend for Cursor IDE chat history."""
 
@@ -284,7 +282,6 @@ class CursorBackend(SessionBackend):
 
     def _sessions_in_window(self, *, repo: Optional[str], days: int) -> list[dict]:
         _index.ensure()
-        from datetime import timedelta
         cutoff = (
             datetime.now(tz=timezone.utc) - timedelta(days=days)
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -312,18 +309,17 @@ class CursorBackend(SessionBackend):
         files: list[dict] = []
         for s in sessions:
             for fp in s.get("_file_set") or []:
-                if fp not in seen:
-                    seen.add(fp)
-                    files.append({
-                        "file_path": fp,
-                        "tool_name": "cursor",
-                        "date": s.get("date") or "",
-                        "session_id": s.get("id_short") or "",
-                    })
                 if len(files) >= limit:
-                    break
-            if len(files) >= limit:
-                break
+                    return files
+                if fp in seen:
+                    continue
+                seen.add(fp)
+                files.append({
+                    "file_path": fp,
+                    "tool_name": "cursor",
+                    "date": s.get("date") or "",
+                    "session_id": s.get("id_short") or "",
+                })
         return files
 
     def search(self, query: str, *, repo: Optional[str] = None, limit: int = 10, days: int = 30) -> list[dict]:
@@ -331,19 +327,18 @@ class CursorBackend(SessionBackend):
         q = query.lower()
         results: list[dict] = []
         for s in sessions:
-            # Search summary
-            summary = (s.get("summary") or "").lower()
+            summary = s.get("summary") or ""
             snippet = ""
-            if q in summary:
-                snippet = s.get("summary") or ""
+            if q in summary.lower():
+                snippet = summary
             else:
                 # Search bubble texts
                 for b in s.get("_bubbles") or []:
-                    text = _extract_text(b).lower()
-                    if q in text:
-                        idx = text.find(q)
+                    text = _extract_text(b)
+                    idx = text.lower().find(q)
+                    if idx >= 0:
                         start = max(0, idx - 60)
-                        snippet = _extract_text(b)[start:start + 200]
+                        snippet = text[start:start + 200]
                         break
             if snippet:
                 results.append({
@@ -363,13 +358,9 @@ class CursorBackend(SessionBackend):
         sid = session_id.strip().lower()
         match = None
         for s in _index.sessions:
-            if s.get("id_full", "").lower() == sid:
-                match = s
-                break
-            if s.get("id_short", "").lower() == sid:
-                match = s
-                break
-            if s.get("id_full", "").lower().startswith(sid):
+            id_full = s.get("id_full", "").lower()
+            id_short = s.get("id_short", "").lower()
+            if id_full == sid or id_short == sid or id_full.startswith(sid):
                 match = s
                 break
         if match is None:
@@ -384,9 +375,9 @@ class CursorBackend(SessionBackend):
         for b in bubbles:
             btype = b.get("type", "")
             text = _extract_text(b)
-            if btype in ("user", "human"):
+            if btype in _USER_TYPES:
                 user_buf = text
-            elif btype in ("ai", "assistant", "bot"):
+            elif btype in _AI_TYPES:
                 if turns is not None and idx >= turns:
                     break
                 turn_list.append({
@@ -418,26 +409,25 @@ class CursorBackend(SessionBackend):
 
     def health(self) -> dict:
         _index.ensure()
-        base = _cursor_base()
 
         # Dimension: workspace count
         ws_count = 0
         chat_count = 0
-        try:
-            if base.exists():
-                for d in base.iterdir():
-                    db = d / "state.vscdb"
-                    if db.exists():
-                        ws_count += 1
-                        if _read_chat_json(db) is not None:
-                            chat_count += 1
-        except Exception:
-            pass
+        for _ws_dir, db in _iter_workspace_dbs(_cursor_base()):
+            ws_count += 1
+            if _read_chat_json(db) is not None:
+                chat_count += 1
 
         # Dimension: index freshness (seconds since last build)
-        import time
         stamp_age = time.time() - _index._stamp if _index._stamp else float("inf")
         fresh = stamp_age < 300  # < 5 min
+
+        if stamp_age == float("inf"):
+            freshness_detail = "never built"
+        elif fresh:
+            freshness_detail = "fresh"
+        else:
+            freshness_detail = f"stale ({int(stamp_age)}s old)"
 
         dim_workspaces = {
             "name": "cursor_workspaces",
@@ -451,7 +441,7 @@ class CursorBackend(SessionBackend):
             "label": "Index freshness",
             "value": round(stamp_age, 1),
             "zone": "GREEN" if fresh else "AMBER",
-            "detail": "fresh" if fresh else ("never built" if stamp_age == float("inf") else f"stale ({int(stamp_age)}s old)"),
+            "detail": freshness_detail,
         }
         dim_sessions = {
             "name": "cursor_sessions",
@@ -462,15 +452,15 @@ class CursorBackend(SessionBackend):
         }
 
         dims = [dim_workspaces, dim_freshness, dim_sessions]
-        zones = [d["zone"] for d in dims]
-        zone = "RED" if "RED" in zones else ("AMBER" if "AMBER" in zones else "GREEN")
-
-        # Score: 10 if all green, 6 if any amber, 2 if any red
-        if zone == "GREEN":
-            score = 10.0
-        elif zone == "AMBER":
+        zones = {d["zone"] for d in dims}
+        if "RED" in zones:
+            zone = "RED"
+            score = 2.0
+        elif "AMBER" in zones:
+            zone = "AMBER"
             score = 6.0
         else:
-            score = 2.0
+            zone = "GREEN"
+            score = 10.0
 
         return {"score": score, "zone": zone, "dimensions": dims}

@@ -1,9 +1,9 @@
 """export command — dump sessions to markdown or JSON."""
 import json
 import sys
+
 from ..backends import get_backend
 from ..util.detect_repo import detect_repo
-from ..util.format_output import output as fmt_output
 
 
 def run(args) -> int:
@@ -23,43 +23,44 @@ def run(args) -> int:
             return 1
         sessions = [session]
     else:
-        sessions = backend.list_sessions(repo=repo, limit=limit, days=days)
-        # fetch full detail for each
-        full = []
-        for s in sessions:
-            sid = s.get("id_full") or s.get("id") or ""
-            detail = backend.show_session(sid) if sid else s
-            full.append(detail or s)
-        sessions = full
+        summaries = backend.list_sessions(repo=repo, limit=limit, days=days)
+        sessions = [_fetch_full(backend, s) for s in summaries]
 
-    if fmt == "json":
-        content = json.dumps(sessions, indent=2, default=str)
-    else:
-        content = _to_markdown(sessions)
+    content = json.dumps(sessions, indent=2, default=str) if fmt == "json" else _to_markdown(sessions)
 
-    if out_path:
-        try:
-            with open(out_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            print(f"exported {len(sessions)} session(s) to {out_path}", file=sys.stderr)
-        except OSError as e:
-            print(f"error: {e}", file=sys.stderr)
-            return 1
-    else:
+    if not out_path:
         print(content)
+        return 0
 
+    try:
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(content)
+    except OSError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"exported {len(sessions)} session(s) to {out_path}", file=sys.stderr)
     return 0
 
 
+def _fetch_full(backend, summary: dict) -> dict:
+    sid = summary.get("id_full") or summary.get("id") or ""
+    if not sid:
+        return summary
+    return backend.show_session(sid) or summary
+
+
 def _to_markdown(sessions: list[dict]) -> str:
-    lines = []
+    lines: list[str] = []
     for s in sessions:
-        lines.append(f"# Session: {s.get('id', s.get('id_full', 'unknown'))[:8]}")
+        sid = s.get("id", s.get("id_full", "unknown"))
+        date = s.get("created_at", s.get("date", ""))
+        lines.append(f"# Session: {sid[:8]}")
         lines.append(f"**Repository:** {s.get('repository', 'unknown')}  ")
         lines.append(f"**Branch:** {s.get('branch', '')}  ")
-        lines.append(f"**Date:** {s.get('created_at', s.get('date', ''))[:10]}  ")
+        lines.append(f"**Date:** {date[:10]}  ")
         lines.append(f"**Summary:** {s.get('summary', '')}  ")
         lines.append("")
+
         for t in s.get("turns", []):
             user = t.get("user") or t.get("user_msg", "")
             assistant = t.get("assistant") or t.get("assistant_msg", "")
@@ -68,6 +69,7 @@ def _to_markdown(sessions: list[dict]) -> str:
             if assistant:
                 lines.append(f"**Assistant:** {assistant[:300]}")
             lines.append("")
+
         files = s.get("files", [])
         if files:
             lines.append(f"**Files touched ({len(files)}):**")
@@ -76,6 +78,7 @@ def _to_markdown(sessions: list[dict]) -> str:
                 tn = f.get("tool_name", "")
                 lines.append(f"- `{fp}` ({tn})" if tn else f"- `{fp}`")
             lines.append("")
+
         lines.append("---")
         lines.append("")
     return "\n".join(lines)
