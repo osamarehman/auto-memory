@@ -113,6 +113,7 @@ def parse_session(path: pathlib.Path) -> dict | None:
                 turns.append({
                     "user": pending_user,
                     "assistant": assistant_text,
+                    "assistant_summary": assistant_text[:300],
                     "timestamp": ts or "",
                 })
                 pending_user = None

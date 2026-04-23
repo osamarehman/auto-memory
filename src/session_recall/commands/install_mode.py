@@ -21,6 +21,7 @@ def run(args) -> int:
 
     setup = getattr(args, "setup", False)
     dry_run = getattr(args, "dry_run", False)
+    mcp_flag = getattr(args, "mcp", False)
 
     result = {
         "surfaces": surface_data,
@@ -74,12 +75,34 @@ def run(args) -> int:
             else:
                 print(f"✓ session-recall block {action}: {claude_md}")
 
+    if mcp_flag:
+        try:
+            from ..backends.claude_code.install import wire_mcp_config, _default_mcp_config_path
+        except ImportError as e:
+            print(f"error: Claude Code backend unavailable: {e}", file=sys.stderr)
+            return 1
+        config_path = _default_mcp_config_path()
+        try:
+            mcp_result = wire_mcp_config(config_path, dry_run=dry_run)
+        except (ValueError, OSError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        result["mcp_config"] = mcp_result
+        if not getattr(args, "json", False):
+            action = mcp_result["action"]
+            if action == "already_wired":
+                print(f"✓ MCP server already configured: {config_path}", file=sys.stderr)
+            elif action == "dry_run":
+                print(f"[dry-run] Would add session-recall MCP server to {config_path}", file=sys.stderr)
+            else:
+                print(f"✓ MCP server wired: {config_path}", file=sys.stderr)
+
     if not getattr(args, "json", False):
         print(f"\nClaude Code surfaces ({len(detected_names)}/{len(surfaces)} detected):")
         for s in surfaces:
             icon = "✓" if s.detected else "✗"
             print(f"  {icon} {s.name:12} {s.note}")
-        if not setup and not dry_run and not project and not project_path_arg:
+        if not setup and not dry_run and not project and not project_path_arg and not mcp_flag:
             print("\nRun with --setup to wire SessionStart hooks automatically.")
 
     output(result, json_mode=getattr(args, "json", False))

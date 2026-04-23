@@ -120,3 +120,54 @@ def test_extract_text_list():
 def test_extract_text_empty():
     assert _extract_text([]) == ""
     assert _extract_text(None) == ""
+
+
+def _write_jsonl(path, records):
+    path.write_text("\n".join(json.dumps(r) for r in records))
+
+
+def test_parse_session_turn_has_assistant_summary(tmp_path):
+    sid = "asummary-long-0001"
+    f = tmp_path / f"{sid}.jsonl"
+    long_text = "x" * 400
+    records = [
+        {
+            "type": "user", "sessionId": sid, "timestamp": "2026-01-01T10:00:00Z",
+            "cwd": "/repo", "gitBranch": "main", "version": "2.0",
+            "message": {"role": "user", "content": "question"},
+        },
+        {
+            "type": "assistant", "sessionId": sid, "timestamp": "2026-01-01T10:00:01Z",
+            "cwd": "/repo", "gitBranch": "main", "version": "2.0",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": long_text}]},
+        },
+    ]
+    _write_jsonl(f, records)
+    result = parse_session(f)
+    assert result is not None
+    turn = result["turns"][0]
+    assert "assistant_summary" in turn
+    assert len(turn["assistant_summary"]) <= 300
+
+
+def test_parse_session_assistant_summary_short_text(tmp_path):
+    sid = "asummary-short-0002"
+    f = tmp_path / f"{sid}.jsonl"
+    short_text = "short answer"
+    records = [
+        {
+            "type": "user", "sessionId": sid, "timestamp": "2026-01-01T10:00:00Z",
+            "cwd": "/repo", "gitBranch": "main", "version": "2.0",
+            "message": {"role": "user", "content": "question"},
+        },
+        {
+            "type": "assistant", "sessionId": sid, "timestamp": "2026-01-01T10:00:01Z",
+            "cwd": "/repo", "gitBranch": "main", "version": "2.0",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": short_text}]},
+        },
+    ]
+    _write_jsonl(f, records)
+    result = parse_session(f)
+    assert result is not None
+    turn = result["turns"][0]
+    assert turn["assistant_summary"] == turn["assistant"]

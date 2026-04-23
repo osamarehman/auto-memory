@@ -225,3 +225,62 @@ def write_claude_md(claude_md_path: pathlib.Path, *, dry_run: bool = False) -> d
                 pass
     action = "updated" if existing else "written"
     return {"action": action, "path": str(claude_md_path)}
+
+
+_MCP_ENTRY = {
+    "command": "session-recall",
+    "args": ["serve"],
+    "env": {}
+}
+
+
+def _default_mcp_config_path() -> "pathlib.Path":
+    """Platform-specific path to claude_desktop_config.json."""
+    if sys.platform == "win32":
+        appdata = pathlib.Path(os.environ.get("APPDATA", pathlib.Path.home() / "AppData" / "Roaming"))
+        return appdata / "Claude" / "claude_desktop_config.json"
+    elif sys.platform == "darwin":
+        return pathlib.Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    else:
+        return pathlib.Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+
+
+def wire_mcp_config(config_path: "pathlib.Path", *, dry_run: bool = False) -> dict:
+    """
+    Add session-recall MCP server entry to claude_desktop_config.json.
+    Returns {"action": "wired"|"already_wired"|"dry_run", "path": str}.
+    """
+    data = {}
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            raise ValueError(f"{config_path} contains invalid JSON.\n  Parse error: {e}") from e
+        except OSError as e:
+            raise OSError(f"Cannot read {config_path}: {e}") from e
+
+    servers = data.setdefault("mcpServers", {})
+    if "session-recall" in servers:
+        return {"changed": False, "path": str(config_path), "action": "already_wired"}
+
+    servers["session-recall"] = _MCP_ENTRY
+
+    if dry_run:
+        return {"action": "dry_run", "path": str(config_path)}
+
+    tmp = config_path.with_suffix(".tmp")
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        try:
+            tmp.replace(config_path)
+        except PermissionError as e:
+            raise OSError(f"Cannot update {config_path}: file is locked.\n  {e}") from e
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+    return {"changed": True, "path": str(config_path), "action": "wired"}

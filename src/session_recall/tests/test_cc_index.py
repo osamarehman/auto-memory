@@ -177,3 +177,50 @@ def test_query_files_after_build(tmp_path):
     rows = query_files(limit=10, days=3650)
     assert len(rows) >= 1
     assert any(r["file_path"] == "/repo/proj/app.py" for r in rows)
+
+
+def test_query_search_finds_assistant_text(tmp_path):
+    jf = _make_session_file(
+        tmp_path, "iii-901",
+        user_msg="help me",
+        assistant_msg="backend abstraction layer using repository pattern",
+    )
+    from session_recall.backends.claude_code import detect as det
+    import unittest.mock as mock
+
+    with mock.patch.object(det, "list_session_files", return_value=[jf]):
+        build_index()
+
+    results = query_search("repository pattern", days=3650)
+    assert len(results) >= 1
+
+
+def test_query_show_includes_assistant_summary(tmp_path):
+    jf = _make_session_file(tmp_path, "jjj-902", assistant_msg="here is my answer")
+    from session_recall.backends.claude_code import detect as det
+    import unittest.mock as mock
+
+    with mock.patch.object(det, "list_session_files", return_value=[jf]):
+        build_index()
+
+    result = query_show("jjj-902")
+    assert result is not None
+    turn = result["turns"][0]
+    assert "assistant_summary" in turn
+    assert len(turn["assistant_summary"]) <= 300
+
+
+def test_build_index_rebuild_preserves_assistant_summary(tmp_path):
+    jf = _make_session_file(
+        tmp_path, "kkk-903",
+        assistant_msg="backend abstraction layer using repository pattern",
+    )
+    from session_recall.backends.claude_code import detect as det
+    import unittest.mock as mock
+
+    with mock.patch.object(det, "list_session_files", return_value=[jf]):
+        build_index()
+        build_index(rebuild=True)
+
+    results = query_search("repository pattern", days=3650)
+    assert len(results) >= 1

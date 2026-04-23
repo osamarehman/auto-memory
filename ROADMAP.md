@@ -13,12 +13,14 @@ Current version: **0.1.0**
 **Backends shipped:**
 - **Copilot CLI** — reads `~/.copilot/session-store.db` (SQLite, read-only)
 - **Claude Code** — scans `~/.claude/projects/` JSONL files, builds a local FTS5 index at `~/.claude/.sr-index.db`
+- **Cursor IDE** — reads per-workspace `state.vscdb` SQLite files
+- **Aider** — parses `.aider.chat.history.md` files
 
-**Commands:** `list`, `files`, `search`, `show`, `checkpoints`, `health`, `schema-check`, `cc-index`, `install-mode`
+**Commands:** `list`, `files`, `search`, `show`, `checkpoints`, `health`, `schema-check`, `cc-index`, `install-mode`, `export`, `prune`
 
-**Flags:** `--backend {copilot,claude}`, `--json`, `--limit`, `--days`, `--repo`
+**Flags:** `--backend {copilot,claude,cursor,aider,all}`, `--json`, `--limit`, `--days`, `--repo`
 
-**Integration:** `SessionStart` hook in `~/.claude/settings.json` for Claude Code; `copilot-instructions.md` block for Copilot CLI.
+**Integration:** `SessionStart` hook in `~/.claude/settings.json` for Claude Code; `CLAUDE.md` block via `install-mode --project`.
 
 **Backend abstraction:** `SessionBackend` ABC with six methods — adding a new backend requires implementing `list_sessions`, `list_files`, `search`, `show_session`, `health`, `is_available`.
 
@@ -28,71 +30,23 @@ Current version: **0.1.0**
 
 ### HIGH Priority
 
-#### 1. `--backend all` — unified multi-backend query
+#### 1. Assistant message indexing (FTS search gap)
 
-Merge results from every available backend in a single command invocation.
+The FTS5 index currently stores only user messages. Technical terms introduced in assistant responses (e.g. "backend abstraction", "atomic write", "FTS5 index") are not searchable.
 
-**Why:** Users running both Copilot CLI and Claude Code run two separate commands and mentally merge the output. A unified view is the natural evolution once two backends exist.
+**Why:** `search "backend abstraction"` returns 0 results even though the concept was central to a session — because the phrase lived in assistant turns, not user turns.
 
 **Approach:**
-- Add `"all"` to `--backend` choices; implement `backends/all.py` `AllBackend` that fans out to each available backend
-- Deduplicate results by `(repository, summary_hash, created_at_minute)` then re-sort by recency
-- `show` excluded from `all` mode — session IDs are backend-scoped; direct user to specify `--backend`
-- `health` in `all` mode reports a dimension block per backend
+- Index a truncated summary of `assistant_msg` alongside `user_msg` in `cc_turns` (≤300 chars)
+- Alternatively: extract file paths and tool names touched in that turn as a synthetic text field
+- Keeps index size reasonable while covering the most useful technical terms
+- Schema migration: add `assistant_summary TEXT` column; rebuild index via `cc-index --rebuild`
 
-**~120 LOC** (`backends/all.py` ~80, `__main__.py` ~40)
+**~60 LOC** (changes to `reader.py`, `index.py` DDL + build loop)
 
 ---
 
-#### 2. `install-mode --project` — per-project `CLAUDE.md` block
-
-Write a `CLAUDE.md` instruction block into the current repo so the integration is version-controlled and visible to all contributors.
-
-**Why:** A global `settings.json` hook is invisible; a `CLAUDE.md` block is self-documenting and ships with the repo.
-
-**Approach:**
-- Add `--project` flag to `install-mode`; append a fenced block to `./CLAUDE.md`
-- Block instructs Claude: "At the start of every session run `session-recall list --limit 5 --json`…"
-- Guard with a sentinel comment (`<!-- session-recall -->`) to prevent duplicate writes on re-runs
-- Add `--dry-run` to preview the diff without writing
-
-**~90 LOC** (additions to `commands/install_mode.py` and `backends/claude_code/install.py`)
-
----
-
-### MEDIUM Priority
-
-#### 3. Cursor IDE backend
-
-Read Cursor's per-workspace conversation history from its application data SQLite database.
-
-**Why:** Cursor is the second most common AI-native editor. Users with large Cursor histories get nothing from the current backends.
-
-**Approach:**
-- `backends/cursor.py` implementing `SessionBackend`; `is_available()` checks for `~/Library/Application Support/Cursor/` (macOS), `%APPDATA%\Cursor\` (Windows), `~/.config/Cursor/` (Linux)
-- Parse workspace storage SQLite key `workbench.panel.aichat.view.aichat.chatdata` (JSON conversation turns)
-- Map Cursor schema to `SessionRecord`/`TurnRecord`; `repository` derived from workspace folder path
-
-**~180 LOC** (`backends/cursor.py` + tests + `__init__.py` wiring)
-
----
-
-#### 4. Aider backend
-
-Parse `.aider.chat.history.md` files written by Aider into each project root.
-
-**Why:** Aider is widely used for terminal-based AI coding. Its sessions are pure markdown — easy to parse — and contain high-signal file-edit history.
-
-**Approach:**
-- `backends/aider.py` implementing `SessionBackend`; `is_available()` returns True if any `.aider.chat.history.md` exists under a configurable root
-- Parse with a simple state machine: `#### human` / `#### assistant` headings with timestamps
-- In-memory index cached by file mtime (`functools.lru_cache`); `search` does case-insensitive substring scan — no FTS needed at this scale
-
-**~160 LOC** (`backends/aider.py` + tests)
-
----
-
-#### 5. MCP server mode
+#### 2. MCP server mode
 
 Expose `session-recall` as an MCP tool server so any MCP-compatible agent can query it without shell access.
 
@@ -108,43 +62,25 @@ Expose `session-recall` as an MCP tool server so any MCP-compatible agent can qu
 
 ---
 
-### LOW Priority
+### MEDIUM Priority
 
-#### 6. `session-recall export` — archive sessions to markdown or JSON
-
-Dump one or more sessions to a portable file for sharing or archiving.
-
-**Approach:**
-- `export` subcommand with `--format {md,json}`, `--output <file>`, `--session <id>`, `--repo`, `--days`, `--limit`
-- Batch export all sessions matching filters as a multi-document file
-- Reuses `show_session` from the active backend — no new backend methods
-
-**~110 LOC**
-
----
-
-#### 7. `session-recall prune` — expire old index entries
-
-Remove sessions older than N days from `~/.claude/.sr-index.db`. Does not touch source JSONL files.
-
-**Approach:**
-- `prune` subcommand with `--days <N>` (default 90) and `--dry-run`
-- `DELETE FROM cc_sessions WHERE last_seen < ?`; prints count of removed rows
-- Claude Code backend only — Copilot backend is read-only
-
-**~60 LOC**
-
----
-
-#### 8. CI with GitHub Actions
+#### 3. CI with GitHub Actions
 
 pytest matrix across Python 3.10–3.13 on macOS, Linux, and Windows.
 
 ---
 
+### LOW Priority
+
+#### 4. Stable API documentation
+
+Document and semver-commit all `--json` output shapes.
+
+---
+
 ### FUTURE
 
-#### 9. Cross-machine sync
+#### 5. Cross-machine sync
 
 Optional sync of the Claude Code index to a remote store (S3, GitHub Gist, HTTPS endpoint) so session context follows the user across machines.
 
@@ -158,21 +94,22 @@ Optional sync of the Claude Code index to a remote store (S3, GitHub Gist, HTTPS
 
 ## Version Milestones
 
-### v0.2 — Multi-backend + project integration
-- [ ] `--backend all` aggregator with deduplication (`backends/all.py`)
-- [ ] `install-mode --project` writes `CLAUDE.md` block
-- [ ] `health` reports across all detected backends in `all` mode
-- [ ] Full test coverage for new paths
+### v0.2 ✅ — Multi-backend + project integration
+- [x] `--backend all` aggregator with deduplication (`backends/all.py`)
+- [x] `install-mode --project` writes `CLAUDE.md` block
+- [x] `health` reports across all detected backends in `all` mode
+- [x] Full test coverage for new paths
 
-### v0.3 — Ecosystem backends + MCP
-- [ ] Cursor IDE backend (`backends/cursor.py`)
-- [ ] Aider backend (`backends/aider.py`)
+### v0.3 ✅ — Ecosystem backends
+- [x] Cursor IDE backend (`backends/cursor.py`)
+- [x] Aider backend (`backends/aider.py`)
+- [x] `--backend all` includes cursor and aider when detected
+- [x] `export` command (markdown + JSON)
+- [x] `prune` command for index hygiene
 - [ ] MCP server mode (`session-recall serve`, `install-mode --mcp`)
-- [ ] `--backend all` includes cursor and aider when detected
 
 ### v1.0 — Stable API + polish
-- [ ] `export` command (markdown + JSON)
-- [ ] `prune` command for index hygiene
+- [ ] Assistant message indexing (FTS search gap fix)
 - [ ] Stable `--json` output shapes documented and semver-committed
 - [ ] Full CI matrix (Python 3.10–3.13, macOS + Linux + Windows)
 - [ ] PyPI release with optional extras: `auto-memory[mcp]`

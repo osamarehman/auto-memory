@@ -18,6 +18,7 @@ _DDL_STATEMENTS = [
     """CREATE TABLE IF NOT EXISTS cc_turns (
         session_id TEXT, turn_index INTEGER,
         user_msg TEXT, assistant_msg TEXT, timestamp TEXT,
+        assistant_summary TEXT,
         PRIMARY KEY (session_id, turn_index)
     )""",
     """CREATE TABLE IF NOT EXISTS cc_files (
@@ -26,7 +27,7 @@ _DDL_STATEMENTS = [
     )""",
     "CREATE TABLE IF NOT EXISTS cc_meta (key TEXT PRIMARY KEY, value TEXT)",
     """CREATE VIRTUAL TABLE IF NOT EXISTS cc_search USING fts5(
-        session_id UNINDEXED, user_msg, assistant_msg, summary
+        session_id UNINDEXED, user_msg, assistant_msg, summary, assistant_summary
     )""",
 ]
 
@@ -40,6 +41,12 @@ def _open(path: pathlib.Path | None = None) -> sqlite3.Connection:
     for stmt in _DDL_STATEMENTS:
         conn.execute(stmt)
     conn.commit()
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(cc_turns)").fetchall()}
+    if "assistant_summary" not in cols:
+        conn.close()
+        raise RuntimeError(
+            "Index schema is out of date — run: session-recall cc-index --rebuild"
+        )
     return conn
 
 
@@ -105,12 +112,15 @@ def build_index(*, rebuild: bool = False, verbose: bool = False) -> dict:
 
             for i, turn in enumerate(session.get("turns", [])):
                 conn.execute(
-                    "INSERT OR REPLACE INTO cc_turns VALUES (?,?,?,?,?)",
-                    (sid, i, turn["user"], turn["assistant"], turn["timestamp"])
+                    "INSERT OR REPLACE INTO cc_turns VALUES (?,?,?,?,?,?)",
+                    (sid, i, turn["user"], turn["assistant"], turn["timestamp"],
+                     turn["assistant_summary"])
                 )
                 conn.execute(
-                    "INSERT INTO cc_search(session_id, user_msg, assistant_msg, summary) VALUES (?,?,?,?)",
-                    (sid, turn["user"], turn["assistant"], session["summary"])
+                    "INSERT INTO cc_search(session_id, user_msg, assistant_msg, summary, assistant_summary)"
+                    " VALUES (?,?,?,?,?)",
+                    (sid, turn["user"], turn["assistant"], session["summary"],
+                     turn["assistant_summary"])
                 )
             for f in session.get("files", []):
                 conn.execute(

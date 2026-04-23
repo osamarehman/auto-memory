@@ -25,6 +25,7 @@ TIER_MAP = {
     "cc-index": 0,                                # Tier 0 — Claude Code index
     "install-mode": 0,                            # Tier 0 — install/hook setup
     "prune": 0,                                   # Tier 0 — prune old index entries
+    "serve": 0,                                   # Tier 0 — MCP stdio server
 }
 
 
@@ -84,6 +85,8 @@ def main() -> None:
                       help="Write session-recall block into CLAUDE.md in current directory")
     p_im.add_argument("--project-path", default=None,
                       help="Path to CLAUDE.md (default: ./CLAUDE.md)")
+    p_im.add_argument("--mcp", action="store_true",
+                      help="Wire MCP server into claude_desktop_config.json")
 
     p_exp = sub.add_parser("export", help="Export sessions to markdown or JSON")
     p_exp.add_argument("--format", choices=["md", "json"], default="md")
@@ -99,6 +102,8 @@ def main() -> None:
                          help="Remove sessions not seen in last N days (default: 90)")
     p_prune.add_argument("--dry-run", action="store_true")
     p_prune.add_argument("--json", action="store_true")
+
+    sub.add_parser("serve", help="Start MCP tool server (stdio)")
 
     args = parser.parse_args()
     if not args.command:
@@ -211,6 +216,9 @@ def main() -> None:
         exit_code = run(args)
     elif args.command == "prune":
         from .commands.prune import run
+        exit_code = run(args)
+    elif args.command == "serve":
+        from .commands.serve import run
         exit_code = run(args)
     else:
         print(f"'{args.command}' not yet implemented. Coming in Phase 2.", file=sys.stderr)
