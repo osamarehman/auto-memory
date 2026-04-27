@@ -53,7 +53,7 @@ def _detect_vscode(home: pathlib.Path) -> Surface:
     return Surface(
         "vscode",
         bool(found),
-        found or str(ext_dir / "anthropics.claude-code-*"),
+        found or str(ext_dir / "anthropic.claude-code-*"),
         "VS Code extension" if found else "Not installed",
     )
 
